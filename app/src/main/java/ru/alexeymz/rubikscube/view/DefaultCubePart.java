@@ -1,22 +1,20 @@
-package ru.alexeymz.rubikscube.elements;
+package ru.alexeymz.rubikscube.view;
 
 import ru.alexeymz.rubikscube.core.Axis;
 import ru.alexeymz.rubikscube.core.CubeSide;
-import ru.alexeymz.rubikscube.core.Rotatable;
 import ru.alexeymz.rubikscube.core.RotateUtils;
-import ru.alexeymz.rubikscube.core.SixSided;
 
-public class SmallCube implements SixSided<Integer>, Rotatable {
-    private int[] data = new int[6];
+public class DefaultCubePart extends CubePart {
+    private final int[] sides = new int[CubeSide.values().length];
 
     @Override
     public Integer get(CubeSide side) {
-        return data[side.ordinal()];
+        return sides[side.ordinal()];
     }
 
     @Override
     public void set(CubeSide side, Integer value) {
-        data[side.ordinal()] = value;
+        sides[side.ordinal()] = value;
     }
 
     @Override

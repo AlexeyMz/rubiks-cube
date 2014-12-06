@@ -11,37 +11,9 @@ import android.view.MenuItem;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-
 public class CubeActivity extends Activity {
 
     private GLSurfaceView glView;
-
-    private class CubeSurfaceView extends GLSurfaceView {
-        private CubeSurfaceView(Context context) {
-            super(context);
-            setEGLContextClientVersion(2);
-            setRenderer(new GLSurfaceView.Renderer() {
-                @Override
-                public void onSurfaceCreated(GL10 unused, EGLConfig config) {
-                    // Set the background frame color
-                    GLES20.glClearColor(100 / 255f, 149 / 255f, 237 / 255f, 1.0f);
-                }
-
-                @Override
-                public void onSurfaceChanged(GL10 unused, int width, int height) {
-                    GLES20.glViewport(0, 0, width, height);
-                }
-
-                @Override
-                public void onDrawFrame(GL10 unused) {
-                    // Redraw background color
-                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-                }
-            });
-            // Render the view only when there is a change in the drawing data
-            setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
-        }
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

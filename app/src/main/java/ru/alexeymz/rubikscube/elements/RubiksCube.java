@@ -193,4 +193,8 @@ public final class RubiksCube {
         invert ^= side == CubeSide.RIGHT || side == CubeSide.DOWN || side == CubeSide.BACK;
         return new EqualsWay(rotation, invert);
     }
+
+    public void draw(float[] mvp) {
+        view.draw(mvp);
+    }
 }

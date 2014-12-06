@@ -11,8 +11,9 @@ public final class DataCube<T> implements Rotatable {
 
     public DataCube(int size) {
         this.size = size;
-        this.data = new ArrayList<T>(size);
-        for (int i = 0; i < size; i++) {
+        int elementCount = size * size * size;
+        this.data = new ArrayList<T>(elementCount);
+        for (int i = 0; i < elementCount; i++) {
             data.add(null);
         }
     }
