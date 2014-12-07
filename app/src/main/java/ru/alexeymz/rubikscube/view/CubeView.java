@@ -5,13 +5,11 @@ import static ru.alexeymz.rubikscube.graphics.MathUtils.*;
 
 import android.graphics.Color;
 import android.opengl.Matrix;
-import android.util.Log;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.Locale;
-import java.util.PriorityQueue;
 
 import ru.alexeymz.rubikscube.core.Axis;
 import ru.alexeymz.rubikscube.core.CubeCoords;
@@ -21,7 +19,7 @@ import ru.alexeymz.rubikscube.core.Rotation;
 import ru.alexeymz.rubikscube.elements.SmallCube;
 
 public class CubeView {
-    private final String vertexShaderCode =
+    private static final String vertexShaderCode =
         "uniform vec3[7] vsColorMap;" +
         "uniform mat4 mMVP;" +
         "uniform mat4 mWorld;" +
@@ -35,7 +33,7 @@ public class CubeView {
         "  vColor = vsColorMap[int(fsSides[int(iSideNum)])];" +
         "}";
 
-    private final String touchShaderCode =
+    private static final String touchShaderCode =
         "uniform mat4 mMVP;" +
         "uniform mat4 mWorld;" +
         "uniform highp float iPartIndex;" +
@@ -44,10 +42,11 @@ public class CubeView {
         "varying vec3 vColor;" +
         "void main() {" +
         "  gl_Position = mMVP * mWorld * vPosition;" +
-        "  vColor = vec3(iPartIndex / 255.0, iSideNum / 255.0, 0.0);" +
+        "  vColor = vec3(floor(iPartIndex / 256.0) / 255.0, " +
+        "    mod(iPartIndex, 256.0) / 255.0, iSideNum / 255.0);" +
         "}";
 
-    private final String fragmentShaderCode =
+    private static final String fragmentShaderCode =
         "precision mediump float;" +
         "varying vec3 vColor;" +
         "void main() {" +
@@ -439,17 +438,22 @@ public class CubeView {
         glDrawArrays(GL_TRIANGLES, 0, SIDE_VERTICES.length / 3);
     }
 
+    /**
+     * Determines part coordinates and side at specified screen point (x, y).
+     * Works for cubes sizes less or equal to <code>floor(pow(2^16, 1/3)) == 40</code>.
+     */
     public PartSideCoords locationAtPixel(int x, int y) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
         glReadPixels(x, textureHeight - y, 1, 1,
             GL_RGBA, GL_UNSIGNED_BYTE, readPixelsBuffer.position(0));
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        byte r = readPixelsBuffer.get();
-        byte g = readPixelsBuffer.get();
-        byte b = readPixelsBuffer.get();
-        byte a = readPixelsBuffer.get();
-        int partIndex = (int)r & 0xFF;
-        int sideNumber = (int)g & 0xFF;
+        int r = (int)readPixelsBuffer.get() & 0xFF;
+        int g = (int)readPixelsBuffer.get() & 0xFF;
+        int b = (int)readPixelsBuffer.get() & 0xFF;
+        int a = (int)readPixelsBuffer.get() & 0xFF;
+        // part index is stored in (R, G) 8-bit components
+        int partIndex = (r << 8) + g;
+        int sideNumber = b;
         if (a == EMPTY_SPACE_ALPHA || sideNumber >= 6) { return null; }
         return new PartSideCoords(
             CubeCoords.fromIndex(viewCube.size, partIndex),

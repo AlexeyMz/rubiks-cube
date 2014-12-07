@@ -119,7 +119,6 @@ public final class RubiksCube {
         CubeCoords b, CubeSide sb)
     {
         if (sa == sb && a != b) {
-            boolean invert;
             EqualsWay equalsWay = getEqualsWay(sa,
                     a.left, a.top, a.depth,
                     b.left, b.top, b.depth);
@@ -132,8 +131,8 @@ public final class RubiksCube {
             Axis rotation = Axis.fromOrdinal(sum - sa.axis().ordinal() - sb.axis().ordinal());
             int layer = rotation.getLayerFrom(a);
             boolean clockwise = false;
-            for (int i = 0; i < rotationRules.length; i++) {
-                if (rotationRules[i][0] == sa && rotationRules[i][1] == sb) {
+            for (CubeSide[] rotationRule : rotationRules) {
+                if (rotationRule[0] == sa && rotationRule[1] == sb) {
                     clockwise = true;
                     break;
                 }

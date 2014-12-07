@@ -65,7 +65,7 @@ public class CubeSurfaceView extends GLSurfaceView {
         requestRender();
     }
 
-    public void toggle() {
+    public void toggleRotateSelect() {
         rotateMode = !rotateMode;
     }
 
@@ -94,8 +94,8 @@ public class CubeSurfaceView extends GLSurfaceView {
                 if (rotateMode) {
                     float dx = x - previousX;
                     float dy = y - previousY;
-                    if (renderer.model[UP_Y] < 0) {
-                        dx = -dx;
+                    synchronized (renderer.model) {
+                        if (renderer.model[UP_Y] < 0) { dx = -dx; }
                     }
                     rotationX = clamp(dx, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);
                     rotationY = clamp(dy, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);

@@ -1,15 +1,9 @@
 package ru.alexeymz.rubikscube;
 
 import android.app.Activity;
-import android.content.Context;
-import android.opengl.GLES20;
-import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
-
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
 
 public class CubeActivity extends Activity {
 
@@ -44,7 +38,7 @@ public class CubeActivity extends Activity {
         int id = item.getItemId();
         switch (id) {
             case R.id.action_settings:
-                glView.toggle();
+                glView.toggleRotateSelect();
                 return true;
             case R.id.action_reset_view:
                 glView.resetView();

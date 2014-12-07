@@ -4,8 +4,6 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 
-import java.util.Arrays;
-
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
@@ -50,8 +48,9 @@ public class CubeRenderer implements GLSurfaceView.Renderer {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         // Calculate VP matrix
         Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0);
-        Matrix.multiplyMM(mvp, 0, viewProjection, 0, model, 0);
-        //Matrix.setIdentityM(mvp, 0);
+        synchronized (model) {
+            Matrix.multiplyMM(mvp, 0, viewProjection, 0, model, 0);
+        }
         cube.draw(mvp);
     }
 }
