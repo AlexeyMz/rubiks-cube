@@ -19,7 +19,12 @@ public class CubeActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         //setContentView(R.layout.activity_cube);
-        glView = new CubeSurfaceView(this);
+        glView = new CubeSurfaceView(this) {
+            @Override
+            protected void setTitle(String title) {
+                CubeActivity.this.setTitle(title);
+            }
+        };
         setContentView(glView);
     }
 
@@ -39,6 +44,7 @@ public class CubeActivity extends Activity {
         int id = item.getItemId();
         switch (id) {
             case R.id.action_settings:
+                glView.toggle();
                 return true;
             case R.id.action_reset_view:
                 glView.resetView();

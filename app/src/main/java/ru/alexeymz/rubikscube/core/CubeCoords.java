@@ -31,6 +31,13 @@ public final class CubeCoords {
         return (depth * cubeSize + top) * cubeSize + left;
     }
 
+    public static CubeCoords fromIndex(int cubeSize, int index) {
+        return new CubeCoords(
+            index % cubeSize,
+            (index / cubeSize) % cubeSize,
+            (index / cubeSize) / cubeSize);
+    }
+
     public int toIndex(int cubeSize) {
         return toIndex(cubeSize, left, top, depth);
     }

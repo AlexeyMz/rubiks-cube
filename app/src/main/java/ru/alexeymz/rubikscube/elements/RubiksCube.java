@@ -8,6 +8,7 @@ import ru.alexeymz.rubikscube.core.CubeSide;
 import ru.alexeymz.rubikscube.core.DataCube;
 import ru.alexeymz.rubikscube.core.Rotation;
 import ru.alexeymz.rubikscube.view.CubeView;
+import ru.alexeymz.rubikscube.view.PartSideCoords;
 
 public final class RubiksCube {
     private static int[] defaultColors = new int[] {
@@ -42,11 +43,7 @@ public final class RubiksCube {
     private CubeView view;
     private int[] colorMap;
 
-    public RubiksCube(int size) {
-        this(size, null);
-    }
-
-    public RubiksCube(int size, int[] colorMap) {
+    public RubiksCube(int size, int screenWidth, int screenHeight) {
         if (size <= 0)
             throw new IllegalArgumentException("size must be > 0.");
         if (colorMap == null) { colorMap = defaultColors; }
@@ -56,7 +53,7 @@ public final class RubiksCube {
         }
 
         dataCube = getDefaultCube(size);
-        view = new CubeView(dataCube, colorMap, true);
+        view = new CubeView(dataCube, colorMap, true, screenWidth, screenHeight);
         this.colorMap = colorMap;
     }
 
@@ -196,5 +193,9 @@ public final class RubiksCube {
 
     public void draw(float[] mvp) {
         view.draw(mvp);
+    }
+
+    public PartSideCoords locationAtPixel(int x, int y) {
+        return view.locationAtPixel(x, y);
     }
 }

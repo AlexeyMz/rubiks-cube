@@ -1,18 +1,17 @@
 package ru.alexeymz.rubikscube.view;
 
+import static android.opengl.GLES20.*;
 import static ru.alexeymz.rubikscube.graphics.MathUtils.*;
 
 import android.graphics.Color;
-import android.opengl.GLES20;
 import android.opengl.Matrix;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
-import java.nio.ShortBuffer;
 import java.util.Locale;
+import java.util.PriorityQueue;
 
 import ru.alexeymz.rubikscube.core.Axis;
 import ru.alexeymz.rubikscube.core.CubeCoords;
@@ -23,10 +22,10 @@ import ru.alexeymz.rubikscube.elements.SmallCube;
 
 public class CubeView {
     private final String vertexShaderCode =
+        "uniform vec3[7] vsColorMap;" +
         "uniform mat4 mMVP;" +
         "uniform mat4 mWorld;" +
         "uniform highp float iPartIndex;" +
-        "uniform vec3[7] vsColorMap;" +
         "uniform float[6] fsSides;" +
         "attribute vec4 vPosition;" +
         "attribute lowp float iSideNum;" +
@@ -36,6 +35,18 @@ public class CubeView {
         "  vColor = vsColorMap[int(fsSides[int(iSideNum)])];" +
         "}";
 
+    private final String touchShaderCode =
+        "uniform mat4 mMVP;" +
+        "uniform mat4 mWorld;" +
+        "uniform highp float iPartIndex;" +
+        "attribute vec4 vPosition;" +
+        "attribute lowp float iSideNum;" +
+        "varying vec3 vColor;" +
+        "void main() {" +
+        "  gl_Position = mMVP * mWorld * vPosition;" +
+        "  vColor = vec3(iPartIndex / 255.0, iSideNum / 255.0, 0.0);" +
+        "}";
+
     private final String fragmentShaderCode =
         "precision mediump float;" +
         "varying vec3 vColor;" +
@@ -43,7 +54,9 @@ public class CubeView {
         "  gl_FragColor = vec4(vColor, 1.0);" +
         "}";
 
-    private int effectProgram;
+    private int screenProgram;
+    private int touchProgram;
+
     private int worldUniform;
     private int partIndexUniform;
     private int sidesUniform;
@@ -95,11 +108,20 @@ public class CubeView {
         }
     }
 
+    private static final int EMPTY_SPACE_ALPHA = 0;
+
+    private int textureWidth, textureHeight;
+    private int[] fbo = new int[1];
+    private int[] texture = new int[1];
+    private int[] depthRB = new int[1];
+    private float[] clearColor = new float[4];
+
     private final float[] colorMap = new float[7 * 3];
     private final float[] cubeSides = new float[6];
 
     private FloatBuffer vertexBuffer;
     private FloatBuffer sideNumBuffer;
+    private ByteBuffer readPixelsBuffer;
 
     private DataCube<CubePart> viewCube;
 
@@ -109,12 +131,16 @@ public class CubeView {
     private float rotationAngle;
     private int stepsLeft = 0;
 
-    public CubeView(DataCube<SmallCube> model, int[] colorMap, boolean removeBlackParts) {
+    public CubeView(DataCube<SmallCube> model, int[] colorMap, boolean removeBlackParts,
+                    int screenWidth, int screenHeight) {
         if (colorMap == null || colorMap.length < 7)
             throw new IllegalArgumentException("colorMap");
 
+        this.textureWidth = screenWidth;
+        this.textureHeight = screenHeight;
         initializeView(model, removeBlackParts);
         initializeBuffers();
+        initFramebuffer(screenWidth, screenHeight);
         initializePrograms();
         createColorMap(colorMap);
     }
@@ -243,6 +269,36 @@ public class CubeView {
 
         sideNumBuffer = createDirectBuffer(SIDE_NUMS.length * 4).asFloatBuffer();
         sideNumBuffer.put(SIDE_NUMS).position(0);
+
+        readPixelsBuffer = createDirectBuffer(4);
+        readPixelsBuffer.position(0);
+    }
+
+    private void initFramebuffer(int width, int height) {
+        glGenFramebuffers(1, fbo, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
+
+        // texture
+        glGenTextures(1, texture, 0);
+        glBindTexture(GL_TEXTURE_2D, texture[0]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture[0], 0);
+
+        // depth renderbuffer
+        glGenRenderbuffers(1, depthRB, 0);
+        glBindRenderbuffer(GL_RENDERBUFFER, depthRB[0]);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRB[0]);
+
+        int status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException(String.format(
+                "Error creating FBO: framebuffer is incomplete. Status: %s", status));
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
     private static ByteBuffer createDirectBuffer(int size) {
@@ -250,22 +306,23 @@ public class CubeView {
     }
 
     private void initializePrograms() {
-        effectProgram = createProgram(vertexShaderCode, fragmentShaderCode);
+        screenProgram = createProgram(vertexShaderCode, fragmentShaderCode);
+        touchProgram = createProgram(touchShaderCode, fragmentShaderCode);
     }
 
     private int createProgram(String vertexShaderCode, String fragmentShaderCode) {
-        int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
-        int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
+        int vertexShader = loadShader(GL_VERTEX_SHADER, vertexShaderCode);
+        int fragmentShader = loadShader(GL_FRAGMENT_SHADER, fragmentShaderCode);
 
-        int program = GLES20.glCreateProgram();         // create empty OpenGL ES Program
-        GLES20.glAttachShader(program, vertexShader);   // add the vertex shader to program
-        GLES20.glAttachShader(program, fragmentShader); // add the fragment shader to program
-        GLES20.glLinkProgram(program);                  // creates OpenGL ES program executables
+        int program = glCreateProgram();         // create empty OpenGL ES Program
+        glAttachShader(program, vertexShader);   // add the vertex shader to program
+        glAttachShader(program, fragmentShader); // add the fragment shader to program
+        glLinkProgram(program);                  // creates OpenGL ES program executables
         int[] status = new int[1];
-        GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, status, 0);
-        if (status[0] != GLES20.GL_TRUE) {
+        glGetProgramiv(program, GL_LINK_STATUS, status, 0);
+        if (status[0] != GL_TRUE) {
             throw new IllegalStateException(String.format(Locale.US,
-                "Shader link error:%n%s", GLES20.glGetProgramInfoLog(program)));
+                "Shader link error:%n%s", glGetProgramInfoLog(program)));
         }
         return program;
     }
@@ -273,95 +330,129 @@ public class CubeView {
     private static int loadShader(int type, String shaderCode) {
         // create a vertex shader type (GLES20.GL_VERTEX_SHADER)
         // or a fragment shader type (GLES20.GL_FRAGMENT_SHADER)
-        int shader = GLES20.glCreateShader(type);
+        int shader = glCreateShader(type);
 
         // add the source code to the shader and compile it
-        GLES20.glShaderSource(shader, shaderCode);
-        GLES20.glCompileShader(shader);
+        glShaderSource(shader, shaderCode);
+        glCompileShader(shader);
         int[] status = new int[1];
-        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0);
-        if (status[0] != GLES20.GL_TRUE) {
+        glGetShaderiv(shader, GL_COMPILE_STATUS, status, 0);
+        if (status[0] != GL_TRUE) {
             throw new IllegalStateException(String.format(
                 Locale.US, "Shader compile error:%n%s",
-                GLES20.glGetShaderInfoLog(shader)));
+                glGetShaderInfoLog(shader)));
         }
 
         return shader;
     }
 
     public void draw(float[] mvp) {
-        // Add program to OpenGL ES environment
-        GLES20.glUseProgram(effectProgram);
+        draw(mvp, true);
 
-        // get handles to vertex shader's attributes
-        int positionAttribute = GLES20.glGetAttribLocation(effectProgram, "vPosition");
-        int sideNumAttribute = GLES20.glGetAttribLocation(effectProgram, "iSideNum");
-        // Enable a handle to the triangle VERTICES
-        GLES20.glEnableVertexAttribArray(positionAttribute);
-        GLES20.glEnableVertexAttribArray(sideNumAttribute);
-        // Prepare the triangle coordinate data
-        GLES20.glVertexAttribPointer(positionAttribute, 3 /* coords per vertex */,
-            GLES20.GL_FLOAT, false, 0, vertexBuffer);
-        GLES20.glVertexAttribPointer(sideNumAttribute, 1 /* index per vertex */,
-            GLES20.GL_FLOAT, false, 0, sideNumBuffer);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
+        glViewport(0, 0, textureWidth, textureHeight);
+        glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor, 0);
+        glClearColor(1, 1, 1, EMPTY_SPACE_ALPHA);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        int mvpUniform = GLES20.glGetUniformLocation(effectProgram, "mMVP");
-        GLES20.glUniformMatrix4fv(mvpUniform, 1, false, mvp, 0);
-        int colorMapUniform = GLES20.glGetUniformLocation(effectProgram, "vsColorMap");
-        GLES20.glUniform3fv(colorMapUniform, 7, colorMap, 0);
-        worldUniform = GLES20.glGetUniformLocation(effectProgram, "mWorld");
-        partIndexUniform = GLES20.glGetUniformLocation(effectProgram, "iPartIndex");
-        sidesUniform = GLES20.glGetUniformLocation(effectProgram, "fsSides");
+        draw(mvp, false);
 
-        //drawPart(0, 0, 0);
-        drawParts();
-
-        // Disable vertex array
-        GLES20.glDisableVertexAttribArray(positionAttribute);
-        GLES20.glDisableVertexAttribArray(sideNumAttribute);
+        glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    private void drawParts() {
+    private void draw(float[] mvp, boolean renderToScreen) {
+        int program = renderToScreen ? screenProgram : touchProgram;
+        glUseProgram(program);
+
+        int positionAttribute = glGetAttribLocation(program, "vPosition");
+        int sideNumAttribute = glGetAttribLocation(program, "iSideNum");
+
+        glEnableVertexAttribArray(positionAttribute);
+        glEnableVertexAttribArray(sideNumAttribute);
+
+        glVertexAttribPointer(positionAttribute, 3 /* coords per vertex */,
+                GL_FLOAT, false, 0, vertexBuffer);
+        glVertexAttribPointer(sideNumAttribute, 1 /* index per vertex */,
+                GL_FLOAT, false, 0, sideNumBuffer);
+
+        int mvpUniform = glGetUniformLocation(program, "mMVP");
+        glUniformMatrix4fv(mvpUniform, 1, false, mvp, 0);
+        if (renderToScreen) {
+            int colorMapUniform = glGetUniformLocation(program, "vsColorMap");
+            glUniform3fv(colorMapUniform, 7, colorMap, 0);
+        }
+        worldUniform = glGetUniformLocation(program, "mWorld");
+        sidesUniform = glGetUniformLocation(program, "fsSides");
+        partIndexUniform = glGetUniformLocation(program, "iPartIndex");
+
+        drawParts(renderToScreen);
+
+        glDisableVertexAttribArray(positionAttribute);
+        glDisableVertexAttribArray(sideNumAttribute);
+    }
+
+    private void drawParts(boolean toScreen) {
         final int maxIndex = viewCube.size - 1;
 
         // draw Up and Down sides
         for (int i = 0; i < viewCube.size; i++) {
             for (int j = 0; j < viewCube.size; j++) {
-                drawPart(i, 0, j);
-                drawPart(i, maxIndex, j);
+                drawPart(i, 0, j, toScreen);
+                drawPart(i, maxIndex, j, toScreen);
             }
         }
 
         // draw Left and Right sides without up and down rows
         for (int i = 1; i < maxIndex; i++) {
             for (int j = 0; j < viewCube.size; j++) {
-                drawPart(0, i, j);
-                drawPart(maxIndex, i, j);
+                drawPart(0, i, j, toScreen);
+                drawPart(maxIndex, i, j, toScreen);
             }
         }
 
         // draw Front and Back sides without side rows and columns
         for (int i = 1; i < maxIndex; i++) {
             for (int j = 1; j < maxIndex; j++) {
-                drawPart(i, j, 0);
-                drawPart(i, j, maxIndex);
+                drawPart(i, j, 0, toScreen);
+                drawPart(i, j, maxIndex, toScreen);
             }
         }
     }
 
-    private void drawPart(int left, int top, int depth) {
+    private void drawPart(int left, int top, int depth, boolean renderToScreen) {
         CubePart part = viewCube.get(left, top, depth);
-        // Set cube position and rotation
-        GLES20.glUniformMatrix4fv(worldUniform, 1, false, part.world, 0);
-//        GLES20.glUniform1f(partIndexUniform,
-//            CubeCoords.toIndex(viewCube.size, left, top, depth));
 
-        for (int i = 0; i < cubeSides.length; i++) {
-            cubeSides[i] = part.get(CubeSide.fromOrdinal(i));
+        glUniformMatrix4fv(worldUniform, 1, false, part.world, 0);
+
+        if (renderToScreen) {
+            for (int i = 0; i < cubeSides.length; i++) {
+                cubeSides[i] = part.get(CubeSide.fromOrdinal(i));
+            }
+            glUniform1fv(sidesUniform, cubeSides.length, cubeSides, 0);
+        } else {
+            glUniform1f(partIndexUniform, CubeCoords.toIndex(
+                    viewCube.size, left, top, depth));
         }
-        GLES20.glUniform1fv(sidesUniform, cubeSides.length, cubeSides, 0);
 
         // Draw the triangles
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, SIDE_VERTICES.length / 3);
+        glDrawArrays(GL_TRIANGLES, 0, SIDE_VERTICES.length / 3);
+    }
+
+    public PartSideCoords locationAtPixel(int x, int y) {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
+        glReadPixels(x, textureHeight - y, 1, 1,
+            GL_RGBA, GL_UNSIGNED_BYTE, readPixelsBuffer.position(0));
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        byte r = readPixelsBuffer.get();
+        byte g = readPixelsBuffer.get();
+        byte b = readPixelsBuffer.get();
+        byte a = readPixelsBuffer.get();
+        int partIndex = (int)r & 0xFF;
+        int sideNumber = (int)g & 0xFF;
+        if (a == EMPTY_SPACE_ALPHA || sideNumber >= 6) { return null; }
+        return new PartSideCoords(
+            CubeCoords.fromIndex(viewCube.size, partIndex),
+            CubeSide.fromOrdinal(sideNumber));
     }
 }
