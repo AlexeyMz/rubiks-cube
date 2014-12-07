@@ -4,5 +4,6 @@
     <string name="app_name">RubiksCube</string>
     <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
+    <string name="action_reset_view">Reset View</string>
 
 </resources>

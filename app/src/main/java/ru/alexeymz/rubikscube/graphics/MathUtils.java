@@ -29,7 +29,7 @@ public final class MathUtils {
         float[] source, int sourceOffset,
         float[] target, int targetOffset, int itemCount)
     {
-        System.arraycopy(target, targetOffset, source, sourceOffset, itemCount);
+        System.arraycopy(source, sourceOffset, target, targetOffset, itemCount);
     }
 
     public static void zero(float[] data, int offset, int itemCount) {
@@ -78,5 +78,13 @@ public final class MathUtils {
         world[RIGHT_X] *= rightR; world[RIGHT_Y] *= rightR; world[RIGHT_Z] *= rightR;
         world[LOOK_X]  *= lookR;  world[LOOK_Y]  *= lookR;  world[LOOK_Z]  *= lookR;
         setPosition(world, ox, oy, oz);
+    }
+
+    public static float toRadians(float degrees) {
+        return (float) Math.toRadians(degrees);
+    }
+
+    public static float toDegrees(float radians) {
+        return (float) Math.toDegrees(radians);
     }
 }
