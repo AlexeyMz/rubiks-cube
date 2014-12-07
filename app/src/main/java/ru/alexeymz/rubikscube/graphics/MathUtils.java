@@ -10,9 +10,9 @@ public final class MathUtils {
     public static final int Z = 14;
     public static final int W = 15;
 
-    public static final int RIGHT_X = 0, RIGHT_Y = 1, RIGHT_Z = 2;
-    public static final int UP_X = 3, UP_Y = 4, UP_Z = 5;
-    public static final int LOOK_X = 6, LOOK_Y = 7, LOOK_Z = 8;
+    public static final int RIGHT_X = 0, RIGHT_Y = 4, RIGHT_Z = 8;
+    public static final int UP_X = 1, UP_Y = 5, UP_Z = 9;
+    public static final int LOOK_X = 2, LOOK_Y = 6, LOOK_Z = 10;
 
     private static final ThreadLocal<float[]> TEMP = new ThreadLocal<float[]>() {
         @Override
@@ -86,5 +86,9 @@ public final class MathUtils {
 
     public static float toDegrees(float radians) {
         return (float) Math.toDegrees(radians);
+    }
+
+    public static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

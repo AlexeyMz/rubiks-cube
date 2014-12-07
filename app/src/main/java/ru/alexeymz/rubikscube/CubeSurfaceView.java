@@ -15,6 +15,10 @@ import ru.alexeymz.rubikscube.elements.RubiksCube;
 
 public class CubeSurfaceView extends GLSurfaceView {
 
+    private static final float MAX_ROTATION_SPEED = 1000;
+
+    private long lastTime = 0;
+
     private RubiksCube cube;
 
     private float[] model = new float[16];
@@ -24,7 +28,7 @@ public class CubeSurfaceView extends GLSurfaceView {
     private float[] mvp = new float[16];
 
     private float previousX, previousY;
-    private float[] temporary = new float[16];
+    private float rotationX, rotationY;
 
     public CubeSurfaceView(Context context) {
         super(context);
@@ -53,6 +57,26 @@ public class CubeSurfaceView extends GLSurfaceView {
 
             @Override
             public void onDrawFrame(GL10 unused) {
+                long currentTime = System.currentTimeMillis();
+                long elapsed = currentTime - lastTime;
+                if (lastTime > 0) { update(elapsed); }
+                draw();
+                lastTime = currentTime;
+            }
+
+            private void update(long elapsed) {
+                float step = elapsed / 100f;
+                Matrix.rotateM(model, 0, rotationX * step, 0, 1, 0);
+                Matrix.rotateM(model, 0, rotationY * step,
+                        model[RIGHT_X], model[RIGHT_Y], model[RIGHT_Z]);
+                rotationX *= Math.pow(0.1f, step * 0.1f);
+                rotationY *= Math.pow(0.1f, step * 0.1f);
+                if (Math.abs(rotationX) + Math.abs(rotationY) > 1f) {
+                    continueAnimation();
+                }
+            }
+
+            private void draw() {
                 // Redraw background color
                 GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
                 // Calculate VP matrix
@@ -66,8 +90,19 @@ public class CubeSurfaceView extends GLSurfaceView {
         setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
     }
 
+    private void startAnimation() {
+        lastTime = System.currentTimeMillis();
+        requestRender();
+    }
+
+    private void continueAnimation() {
+        requestRender();
+    }
+
     public void resetView() {
         Matrix.setIdentityM(model, 0);
+        rotationX = 0;
+        rotationY = 0;
         requestRender();
         //Matrix.scaleM(model, 0, 100, 100, 100);
         //Matrix.rotateM(model, 0, 45, 1, 0, 0);
@@ -78,20 +113,16 @@ public class CubeSurfaceView extends GLSurfaceView {
     public boolean onTouchEvent(MotionEvent e) {
         float x = e.getX();
         float y = e.getY();
+        e.getEventTime();
 
         switch (e.getAction()) {
             case MotionEvent.ACTION_MOVE:
                 float dx = x - previousX;
                 float dy = y - previousY;
-                Matrix.setRotateM(temporary, 0, dx * 0.2f,
-                    model[UP_X], model[UP_Y], model[UP_Z]);
-                Matrix.multiplyMM(model, 0, temporary, 0, model, 0);
-                Matrix.rotateM(model, 0, dy * 0.2f, 1, 0, 0);
-                //Matrix.multiplyMM(model, 0, model, 0, temporary, 0);
-                //Matrix.rotateM(model, 0, dx * 0.2f, 0, 1, 0);
-                //Matrix.rotateM(model, 0, dy * 0.2f,
-                //    model[RIGHT_X], model[RIGHT_Y], model[RIGHT_Z]);
-                requestRender();
+                if (model[UP_Y] < 0) { dx = -dx; }
+                rotationX = clamp(dx, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);
+                rotationY = clamp(dy, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);
+                startAnimation();
                 break;
         }
 
