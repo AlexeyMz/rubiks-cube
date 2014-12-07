@@ -24,7 +24,7 @@ public final class DataCube<T> implements Rotatable {
             depth < 0 || depth >= size) {
             throw new IllegalArgumentException("left, top and depth must be > 0 and < size.");
         }
-        return data.get((depth * size + top) * size + left);
+        return data.get(CubeCoords.toIndex(size, left, top, depth));
     }
 
     public void set(int left, int top, int depth, T value) {
@@ -33,7 +33,7 @@ public final class DataCube<T> implements Rotatable {
             depth < 0 || depth >= size) {
             throw new IllegalArgumentException("left, top and depth must be > 0 and < size.");
         }
-        data.set((depth * size + top) * size + left, value);
+        data.set(CubeCoords.toIndex(size, left, top, depth), value);
     }
 
     public T get(CubeCoords coords) {

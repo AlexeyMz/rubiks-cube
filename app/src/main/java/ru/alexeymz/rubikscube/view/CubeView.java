@@ -25,17 +25,19 @@ public class CubeView {
     private final String vertexShaderCode =
         "uniform mat4 mMVP;" +
         "uniform mat4 mWorld;" +
+        "uniform highp float iPartIndex;" +
         "uniform vec3[7] vsColorMap;" +
+        "uniform float[6] fsSides;" +
         "attribute vec4 vPosition;" +
-        "attribute highp float iType;" +
+        "attribute lowp float iSideNum;" +
         "varying vec3 vColor;" +
         "void main() {" +
         "  gl_Position = mMVP * mWorld * vPosition;" +
-        "  vColor = vsColorMap[int(iType)];" +/*iType == 1.0 ? vec3(0, 1.0, 0) : vec3(1.0, 0, 0)*/
+        "  vColor = vsColorMap[int(fsSides[int(iSideNum)])];" +
         "}";
 
     private final String fragmentShaderCode =
-        "precision highp float;" +
+        "precision mediump float;" +
         "varying vec3 vColor;" +
         "void main() {" +
         "  gl_FragColor = vec4(vColor, 1.0);" +
@@ -43,7 +45,8 @@ public class CubeView {
 
     private int effectProgram;
     private int worldUniform;
-    private int typeAttribute;
+    private int partIndexUniform;
+    private int sidesUniform;
 
     private static final float[] VERTICES = {
         -.5f, +.5f, +.5f,  //   1----2
@@ -70,6 +73,7 @@ public class CubeView {
         5, 1, 2,
     };
     private static final float[] SIDE_VERTICES = new float[INDICES.length * 3];
+    private static final float[] SIDE_NUMS = new float[INDICES.length];
     static {
         for (int i = 0; i < INDICES.length; i++) {
             int vertex = i * 3;
@@ -78,13 +82,24 @@ public class CubeView {
             SIDE_VERTICES[vertex + 1] = VERTICES[index + 1];
             SIDE_VERTICES[vertex + 2] = VERTICES[index + 2];
         }
+        CubeSide[] sides = {
+            CubeSide.UP, CubeSide.DOWN,
+            CubeSide.LEFT, CubeSide.RIGHT,
+            CubeSide.FRONT, CubeSide.BACK,
+        };
+        final int VERTICES_PER_SIDE = SIDE_NUMS.length / sides.length;
+        for (int i = 0; i < sides.length; i++) {
+            for (int j = 0; j < VERTICES_PER_SIDE; j++) {
+                SIDE_NUMS[i * VERTICES_PER_SIDE + j] = sides[i].ordinal();
+            }
+        }
     }
 
-    private final float[] sideTypes = new float[SIDE_VERTICES.length];
     private final float[] colorMap = new float[7 * 3];
+    private final float[] cubeSides = new float[6];
 
     private FloatBuffer vertexBuffer;
-    private FloatBuffer typeBuffer;
+    private FloatBuffer sideNumBuffer;
 
     private DataCube<CubePart> viewCube;
 
@@ -226,7 +241,8 @@ public class CubeView {
         vertexBuffer = createDirectBuffer(SIDE_VERTICES.length * 4).asFloatBuffer();
         vertexBuffer.put(SIDE_VERTICES).position(0);
 
-        typeBuffer = createDirectBuffer(SIDE_VERTICES.length * 4).asFloatBuffer();
+        sideNumBuffer = createDirectBuffer(SIDE_NUMS.length * 4).asFloatBuffer();
+        sideNumBuffer.put(SIDE_NUMS).position(0);
     }
 
     private static ByteBuffer createDirectBuffer(int size) {
@@ -277,29 +293,32 @@ public class CubeView {
         // Add program to OpenGL ES environment
         GLES20.glUseProgram(effectProgram);
 
-        // get handle to vertex shader's vPosition member
+        // get handles to vertex shader's attributes
         int positionAttribute = GLES20.glGetAttribLocation(effectProgram, "vPosition");
-        typeAttribute = GLES20.glGetAttribLocation(effectProgram, "iType");
-        //int normalAttribute = GLES20.glGetAttribLocation(effectProgram, "vNormal");
+        int sideNumAttribute = GLES20.glGetAttribLocation(effectProgram, "iSideNum");
         // Enable a handle to the triangle VERTICES
         GLES20.glEnableVertexAttribArray(positionAttribute);
-        GLES20.glEnableVertexAttribArray(typeAttribute);
+        GLES20.glEnableVertexAttribArray(sideNumAttribute);
         // Prepare the triangle coordinate data
         GLES20.glVertexAttribPointer(positionAttribute, 3 /* coords per vertex */,
-                GLES20.GL_FLOAT, false, 0, vertexBuffer);
+            GLES20.GL_FLOAT, false, 0, vertexBuffer);
+        GLES20.glVertexAttribPointer(sideNumAttribute, 1 /* index per vertex */,
+            GLES20.GL_FLOAT, false, 0, sideNumBuffer);
 
         int mvpUniform = GLES20.glGetUniformLocation(effectProgram, "mMVP");
         GLES20.glUniformMatrix4fv(mvpUniform, 1, false, mvp, 0);
         int colorMapUniform = GLES20.glGetUniformLocation(effectProgram, "vsColorMap");
         GLES20.glUniform3fv(colorMapUniform, 7, colorMap, 0);
         worldUniform = GLES20.glGetUniformLocation(effectProgram, "mWorld");
+        partIndexUniform = GLES20.glGetUniformLocation(effectProgram, "iPartIndex");
+        sidesUniform = GLES20.glGetUniformLocation(effectProgram, "fsSides");
 
         //drawPart(0, 0, 0);
         drawParts();
 
         // Disable vertex array
         GLES20.glDisableVertexAttribArray(positionAttribute);
-        GLES20.glDisableVertexAttribArray(typeAttribute);
+        GLES20.glDisableVertexAttribArray(sideNumAttribute);
     }
 
     private void drawParts() {
@@ -334,25 +353,15 @@ public class CubeView {
         CubePart part = viewCube.get(left, top, depth);
         // Set cube position and rotation
         GLES20.glUniformMatrix4fv(worldUniform, 1, false, part.world, 0);
+//        GLES20.glUniform1f(partIndexUniform,
+//            CubeCoords.toIndex(viewCube.size, left, top, depth));
 
-        setType(0, part, CubeSide.UP);
-        setType(6, part, CubeSide.DOWN);
-        setType(12, part, CubeSide.LEFT);
-        setType(18, part, CubeSide.RIGHT);
-        setType(24, part, CubeSide.FRONT);
-        setType(30, part, CubeSide.BACK);
-        typeBuffer.put(sideTypes).position(0);
-        GLES20.glVertexAttribPointer(typeAttribute, 1 /* coords per vertex */,
-                GLES20.GL_FLOAT, false, 0, typeBuffer);
+        for (int i = 0; i < cubeSides.length; i++) {
+            cubeSides[i] = part.get(CubeSide.fromOrdinal(i));
+        }
+        GLES20.glUniform1fv(sidesUniform, cubeSides.length, cubeSides, 0);
 
         // Draw the triangles
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, SIDE_VERTICES.length / 3);
-    }
-
-    private void setType(int offset, CubePart part, CubeSide side) {
-        int type = part.get(side);
-        for (int i = 0; i < 6; i++) {
-            sideTypes[offset + i] = type;
-        }
     }
 }

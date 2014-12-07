@@ -27,6 +27,14 @@ public final class CubeCoords {
         vector[vectorOffset + 2] = (-depth + shift) * scale;
     }
 
+    public static int toIndex(int cubeSize, int left, int top, int depth) {
+        return (depth * cubeSize + top) * cubeSize + left;
+    }
+
+    public int toIndex(int cubeSize) {
+        return toIndex(cubeSize, left, top, depth);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
