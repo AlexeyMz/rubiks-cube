@@ -33,15 +33,17 @@ public final class RubiksCube {
         { CubeSide.RIGHT, CubeSide.BACK },
         { CubeSide.BACK, CubeSide.LEFT },
         // depth
-        { CubeSide.UP, CubeSide.LEFT },
-        { CubeSide.LEFT, CubeSide.DOWN },
-        { CubeSide.DOWN, CubeSide.RIGHT },
-        { CubeSide.RIGHT, CubeSide.UP },
+        { CubeSide.UP, CubeSide.RIGHT },
+        { CubeSide.RIGHT, CubeSide.DOWN },
+        { CubeSide.DOWN, CubeSide.LEFT },
+        { CubeSide.LEFT, CubeSide.UP },
     };
 
     private DataCube<SmallCube> dataCube;
     private CubeView view;
     private int[] colorMap;
+
+    private volatile PartSideCoords selection;
 
     public RubiksCube(int size, int screenWidth, int screenHeight) {
         if (size <= 0)
@@ -53,8 +55,7 @@ public final class RubiksCube {
         }
 
         dataCube = getDefaultCube(size);
-        view = new CubeView(dataCube, colorMap, true, screenWidth, screenHeight);
-        this.colorMap = colorMap;
+        view = new CubeView(this, dataCube, colorMap, true, screenWidth, screenHeight);
     }
 
     public int size() {
@@ -98,16 +99,24 @@ public final class RubiksCube {
         return bigCube;
     }
 
-    public void beginLayerRotation(Rotation rotation, int stepCount) {
+    public PartSideCoords getSelection() {
+        return selection;
+    }
+
+    public void setSelection(PartSideCoords selection) {
+        this.selection = selection;
+    }
+
+    public void beginLayerRotation(Rotation rotation, double durationMs, double currentTimeMs) {
         if (isAnimationInProgress()) {
             endAnimation();
         }
-        view.beginLayerRotation(rotation, stepCount);
+        view.beginLayerRotation(rotation, durationMs, currentTimeMs);
         dataCube.rotateLayer(rotation.axis, rotation.layer, rotation.clockwise);
     }
 
-    public void updateAnimation() {
-        view.updateAnimation();
+    public void updateAnimation(double absoluteTimeMs) {
+        view.updateAnimation(absoluteTimeMs);
     }
 
     public void endAnimation() {
@@ -118,22 +127,22 @@ public final class RubiksCube {
         CubeCoords a, CubeSide sa,
         CubeCoords b, CubeSide sb)
     {
-        if (sa == sb && a != b) {
+        if (sa == sb && !a.equals(b)) {
             EqualsWay equalsWay = getEqualsWay(sa,
                     a.left, a.top, a.depth,
                     b.left, b.top, b.depth);
             if (equalsWay == null) { return null; }
             Axis rotation = equalsWay.rotation;
             int layer = rotation.getLayerFrom(a);
-            return new Rotation(rotation, layer, !equalsWay.invert);
-        } else if (a == b && sa != sb) {
+            return new Rotation(rotation, layer, equalsWay.clockwise);
+        } else if (sa != sb && a.equals(b)) {
             int sum = Axis.LEFT.ordinal() + Axis.TOP.ordinal() + Axis.DEPTH.ordinal();
             Axis rotation = Axis.fromOrdinal(sum - sa.axis().ordinal() - sb.axis().ordinal());
             int layer = rotation.getLayerFrom(a);
-            boolean clockwise = false;
+            boolean clockwise = true;
             for (CubeSide[] rotationRule : rotationRules) {
                 if (rotationRule[0] == sa && rotationRule[1] == sb) {
-                    clockwise = true;
+                    clockwise = false;
                     break;
                 }
             }
@@ -145,11 +154,11 @@ public final class RubiksCube {
 
     private static class EqualsWay {
         public final Axis rotation;
-        public final boolean invert;
+        public final boolean clockwise;
 
-        private EqualsWay(Axis rotation, boolean invert) {
+        private EqualsWay(Axis rotation, boolean clockwise) {
             this.rotation = rotation;
-            this.invert = invert;
+            this.clockwise = clockwise;
         }
     }
 
@@ -158,40 +167,40 @@ public final class RubiksCube {
         int left2, int top2, int depth2)
     {
         Axis rotation = null;
-        boolean invert = false;
+        boolean clockwise = false;
 
         if (side == CubeSide.LEFT || side == CubeSide.RIGHT) {
             if (top1 == top2) {
                 rotation = Axis.TOP;
-                invert = depth1 < depth2;
+                clockwise = depth1 < depth2;
             } else if (depth1 == depth2) {
                 rotation = Axis.DEPTH;
-                invert = top1 > top2;
+                clockwise = top2 > top1;
             }
         } else if (side == CubeSide.UP || side == CubeSide.DOWN) {
             if (left1 == left2) {
                 rotation = Axis.LEFT;
-                invert = depth1 > depth2;
+                clockwise = depth1 > depth2;
             } else if (depth1 == depth2) {
                 rotation = Axis.DEPTH;
-                invert = left1 < left2;
+                clockwise = left1 > left2;
             }
         } else if (side == CubeSide.FRONT || side == CubeSide.BACK) {
             if (left1 == left2) {
                 rotation = Axis.LEFT;
-                invert = top1 < top2;
+                clockwise = top1 < top2;
             } else if (top1 == top2) {
                 rotation = Axis.TOP;
-                invert = left1 > left2;
+                clockwise = left1 > left2;
             }
         }
 
-        invert ^= side == CubeSide.RIGHT || side == CubeSide.DOWN || side == CubeSide.BACK;
-        return new EqualsWay(rotation, invert);
+        clockwise ^= side == CubeSide.RIGHT || side == CubeSide.DOWN || side == CubeSide.BACK;
+        return rotation == null ? null : new EqualsWay(rotation, clockwise);
     }
 
-    public void draw(float[] mvp) {
-        view.draw(mvp);
+    public void draw(float[] mvp, double absoluteTimeMs) {
+        view.draw(mvp, absoluteTimeMs);
     }
 
     public PartSideCoords locationAtPixel(int x, int y) {

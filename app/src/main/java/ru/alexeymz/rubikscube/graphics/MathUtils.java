@@ -39,6 +39,10 @@ public final class MathUtils {
         }
     }
 
+    public static float length(float x, float y) {
+        return (float)Math.sqrt(x * x + y * y);
+    }
+
     public static float length(float x, float y, float z) {
         return (float)Math.sqrt(x * x + y * y + z * z);
     }
@@ -49,15 +53,22 @@ public final class MathUtils {
         world[Z] = z;
     }
 
+    /**
+     * Counter-clockwise rotation around point (x, y, z)
+     */
     public static void rotateAround(float[] world,
                                     float x, float y, float z,
                                     float xAngle, float yAngle, float zAngle) {
         world[X] -= x;
         world[Y] -= y;
         world[Z] -= z;
-        Matrix.rotateM(world, 0, yAngle, 0, 1, 0);
-        Matrix.rotateM(world, 0, xAngle, 1, 0, 0);
-        Matrix.rotateM(world, 0, zAngle, 0, 0, 1);
+        float[] temp = TEMP.get();
+        Matrix.setIdentityM(temp, 0);
+        Matrix.rotateM(temp, 0, yAngle, 0, 1, 0);
+        Matrix.rotateM(temp, 0, xAngle, 1, 0, 0);
+        Matrix.rotateM(temp, 0, zAngle, 0, 0, 1);
+        Matrix.multiplyMM(temp, 16, temp, 0, world, 0);
+        copy(temp, 16, world, 0, 16);
         world[X] += x;
         world[Y] += y;
         world[Z] += z;
@@ -78,6 +89,15 @@ public final class MathUtils {
         world[RIGHT_X] *= rightR; world[RIGHT_Y] *= rightR; world[RIGHT_Z] *= rightR;
         world[LOOK_X]  *= lookR;  world[LOOK_Y]  *= lookR;  world[LOOK_Z]  *= lookR;
         setPosition(world, ox, oy, oz);
+    }
+
+    public static void resetRotation(float[] world) {
+        world[RIGHT_X] += world[RIGHT_Y] + world[RIGHT_Z];
+        world[UP_Y]    += world[UP_X]    + world[UP_Z];
+        world[LOOK_Z]  += world[LOOK_X]  + world[LOOK_Y];
+        world[RIGHT_Y] = world[RIGHT_Z] = 0;
+        world[UP_X]    = world[UP_Z]    = 0;
+        world[LOOK_X]  = world[LOOK_Y]  = 0;
     }
 
     public static float toRadians(float degrees) {

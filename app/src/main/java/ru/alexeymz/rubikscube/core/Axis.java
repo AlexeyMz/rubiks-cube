@@ -2,6 +2,21 @@ package ru.alexeymz.rubikscube.core;
 
 /**
  * Represents an axis in cube.
+ * In cube:
+ *
+ *    depth
+ *    /
+ *   o--left
+ *   |
+ *  top
+ *
+ * In 3D-space:
+ *
+ *            *     *        Y
+ *            |    /         |
+ *           top  depth      o---X
+ *            | /           /
+ *   *--left--o            Z
  */
 public enum Axis {
     /**

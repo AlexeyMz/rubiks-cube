@@ -12,8 +12,9 @@ import ru.alexeymz.rubikscube.elements.RubiksCube;
 public class CubeRenderer implements GLSurfaceView.Renderer {
 
     public RubiksCube cube;
-
     public final float[] model = new float[16];
+    public volatile float absoluteTimeMs;
+
     private float[] projection = new float[16];
     private float[] view = new float[16];
     private float[] viewProjection = new float[16];
@@ -38,7 +39,7 @@ public class CubeRenderer implements GLSurfaceView.Renderer {
         Matrix.perspectiveM(projection, 0,
             45 /* (!) degrees */, aspectRatio, 1, 10);
         if (cube == null) {
-            cube = new RubiksCube(5, width, height);
+            cube = new RubiksCube(2, width, height);
         }
     }
 
@@ -51,6 +52,6 @@ public class CubeRenderer implements GLSurfaceView.Renderer {
         synchronized (model) {
             Matrix.multiplyMM(mvp, 0, viewProjection, 0, model, 0);
         }
-        cube.draw(mvp);
+        cube.draw(mvp, absoluteTimeMs);
     }
 }

@@ -21,6 +21,6 @@ public class SmallCube implements SixSided<Integer>, Rotatable {
 
     @Override
     public void rotateAround(Axis axis) {
-        RotateUtils.rotate(this, axis, true);
+        RotateUtils.rotate(this, axis, false);
     }
 }

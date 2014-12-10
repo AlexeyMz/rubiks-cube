@@ -38,7 +38,6 @@ public class CubeActivity extends Activity {
         int id = item.getItemId();
         switch (id) {
             case R.id.action_settings:
-                glView.toggleRotateSelect();
                 return true;
             case R.id.action_reset_view:
                 glView.resetView();

@@ -16,42 +16,51 @@ import ru.alexeymz.rubikscube.core.CubeCoords;
 import ru.alexeymz.rubikscube.core.CubeSide;
 import ru.alexeymz.rubikscube.core.DataCube;
 import ru.alexeymz.rubikscube.core.Rotation;
+import ru.alexeymz.rubikscube.elements.RubiksCube;
 import ru.alexeymz.rubikscube.elements.SmallCube;
+import ru.alexeymz.rubikscube.utils.CollectionUtils;
 
 public class CubeView {
-    private static final String vertexShaderCode =
-        "uniform vec3[7] vsColorMap;" +
-        "uniform mat4 mMVP;" +
-        "uniform mat4 mWorld;" +
-        "uniform highp float iPartIndex;" +
-        "uniform float[6] fsSides;" +
-        "attribute vec4 vPosition;" +
-        "attribute lowp float iSideNum;" +
-        "varying vec3 vColor;" +
-        "void main() {" +
-        "  gl_Position = mMVP * mWorld * vPosition;" +
-        "  vColor = vsColorMap[int(fsSides[int(iSideNum)])];" +
-        "}";
+    private static final String vertexShaderCode = CollectionUtils.join("\n",
+        "uniform vec3[7] vsColorMap;",
+        "uniform float fAbsTimeMs;",
+        "uniform mat4 mMVP;",
+        "uniform mat4 mWorld;",
+        "uniform highp float iPartIndex;",
+        "uniform float[6] fsSides;",
+        "uniform float iSelectedPartIndex;",
+        "uniform float iSelectedSide;",
+        "attribute vec4 vPosition;",
+        "attribute lowp float iSideNum;",
+        "varying vec3 vColor;",
+        "void main() {",
+        "  gl_Position = mMVP * mWorld * vPosition;",
+        "  vec3 sideColor = vsColorMap[int(fsSides[int(iSideNum)])];",
+        "  float rounded = mod(fAbsTimeMs, 1000.0);",
+        "  float a = 0.2 + 0.6 * 0.002 * (rounded <= 500.0 ? rounded : 1000.0 - rounded);",
+        "  vColor = int(iSelectedPartIndex) == int(iPartIndex) && int(iSelectedSide) == int(iSideNum)",
+        "      ? (sideColor * (1.0 - a) + vec3(0.0, a, a)) : sideColor;",
+        "}");
 
-    private static final String touchShaderCode =
-        "uniform mat4 mMVP;" +
-        "uniform mat4 mWorld;" +
-        "uniform highp float iPartIndex;" +
-        "attribute vec4 vPosition;" +
-        "attribute lowp float iSideNum;" +
-        "varying vec3 vColor;" +
-        "void main() {" +
-        "  gl_Position = mMVP * mWorld * vPosition;" +
-        "  vColor = vec3(floor(iPartIndex / 256.0) / 255.0, " +
-        "    mod(iPartIndex, 256.0) / 255.0, iSideNum / 255.0);" +
-        "}";
+    private static final String touchShaderCode = CollectionUtils.join("\n",
+        "uniform mat4 mMVP;",
+        "uniform mat4 mWorld;",
+        "uniform highp float iPartIndex;",
+        "attribute vec4 vPosition;",
+        "attribute lowp float iSideNum;",
+        "varying vec3 vColor;",
+        "void main() {",
+        "  gl_Position = mMVP * mWorld * vPosition;",
+        "  vColor = vec3(floor(iPartIndex / 256.0) / 255.0, ",
+        "    mod(iPartIndex, 256.0) / 255.0, iSideNum / 255.0);",
+        "}");
 
-    private static final String fragmentShaderCode =
-        "precision mediump float;" +
-        "varying vec3 vColor;" +
-        "void main() {" +
-        "  gl_FragColor = vec4(vColor, 1.0);" +
-        "}";
+    private static final String fragmentShaderCode = CollectionUtils.join("\n",
+        "precision mediump float;",
+        "varying vec3 vColor;",
+        "void main() {",
+        "  gl_FragColor = vec4(vColor, 1.0);",
+        "}");
 
     private int screenProgram;
     private int touchProgram;
@@ -122,19 +131,21 @@ public class CubeView {
     private FloatBuffer sideNumBuffer;
     private ByteBuffer readPixelsBuffer;
 
+    private RubiksCube rubiksCube;
     private DataCube<CubePart> viewCube;
 
-    private int animatedLayer;
-    private Axis animatedAxis;
+    private Rotation animatedRotation;
+    private double animationStartTimeMs;
+    private double animationOffsetTimeMs;
+    private double animationDurationMs;
 
-    private float rotationAngle;
-    private int stepsLeft = 0;
-
-    public CubeView(DataCube<SmallCube> model, int[] colorMap, boolean removeBlackParts,
+    public CubeView(RubiksCube rubiksCube, DataCube<SmallCube> model,
+                    int[] colorMap, boolean removeBlackParts,
                     int screenWidth, int screenHeight) {
         if (colorMap == null || colorMap.length < 7)
             throw new IllegalArgumentException("colorMap");
 
+        this.rubiksCube = rubiksCube;
         this.textureWidth = screenWidth;
         this.textureHeight = screenHeight;
         initializeView(model, removeBlackParts);
@@ -196,36 +207,35 @@ public class CubeView {
     }
 
     public boolean isAnimationInProgress() {
-        return stepsLeft > 0;
+        return animatedRotation != null;
     }
 
-    public void beginLayerRotation(
-            Rotation rotation, int stepCount) {
+    public void beginLayerRotation(Rotation rotation, double durationMs, double currentTimeMs) {
         if (rotation.layer >= viewCube.size)
             throw new IllegalArgumentException("rotatedLayer must be in [0..size)");
-        if (stepCount <= 0)
-            throw new IllegalArgumentException("stepCount must be >= 0.");
+        if (durationMs < 0)
+            throw new IllegalArgumentException("duration must be >= 0.");
         if (isAnimationInProgress())
             throw new IllegalStateException("Animation already in progress.");
 
-        animatedAxis = rotation.axis;
-        animatedLayer = rotation.layer;
-        stepsLeft = stepCount;
-
-        rotationAngle = (float)Math.PI / (2 * stepCount) * (rotation.clockwise ? +1 : -1);
+        animatedRotation = rotation;
+        animationStartTimeMs = animationOffsetTimeMs = currentTimeMs;
+        animationDurationMs = durationMs;
     }
 
-    private void rotateLayer(float angle) {
+    private void rotateLayer(float counterClockwiseAngle) {
+        int animatedLayer = animatedRotation.layer;
+        float angle = counterClockwiseAngle;
         for (int i = 0; i < viewCube.size; i++) {
             for (int j = 0; j < viewCube.size; j++) {
-                switch (animatedAxis) {
+                switch (animatedRotation.axis) {
                     case LEFT:
                         rotateAround(viewCube.get(animatedLayer, i, j).world,
-                                0, 0, 0, angle, 0, 0);
+                                0, 0, 0, -angle, 0, 0);
                         break;
                     case TOP:
                         rotateAround(viewCube.get(i, animatedLayer, j).world,
-                                0, 0, 0, 0, -angle, 0);
+                                0, 0, 0, 0, angle, 0);
                         break;
                     case DEPTH:
                         rotateAround(viewCube.get(i, j, animatedLayer).world,
@@ -236,14 +246,45 @@ public class CubeView {
         }
     }
 
-    public void updateAnimation() {
+    private void resetLayerCubeRotations() {
+        int animatedLayer = animatedRotation.layer;
+        for (int i = 0; i < viewCube.size; i++) {
+            for (int j = 0; j < viewCube.size; j++) {
+                CubePart part = null;
+                switch (animatedRotation.axis) {
+                    case LEFT:
+                        part = viewCube.get(animatedLayer, i, j);
+                        break;
+                    case TOP:
+                        part = viewCube.get(i, animatedLayer, j);
+                        break;
+                    case DEPTH:
+                        part = viewCube.get(i, j, animatedLayer);
+                        break;
+                }
+                resetRotation(part.world);
+            }
+        }
+    }
+
+    public void updateAnimation(double absoluteTimeMs) {
         if (!isAnimationInProgress()) { return; }
 
-        rotateLayer(rotationAngle);
+        double endTime = animationStartTimeMs + animationDurationMs;
+        double elapsed = Math.min(absoluteTimeMs, endTime) - animationOffsetTimeMs;
 
-        stepsLeft--;
-        if (stepsLeft == 0) {
-            endRotation();
+        float invertMultiplier = animatedRotation.clockwise ? -1 : +1;
+        double remainder = animationDurationMs == 0 ? 1 : (elapsed / animationDurationMs);
+        rotateLayer((float)(90.0 * remainder) * invertMultiplier);
+
+        animationOffsetTimeMs = absoluteTimeMs;
+        if (absoluteTimeMs >= endTime) {
+            // finish rotation
+            //rotateLayer(-90 * invertMultiplier);
+            viewCube.rotateLayer(
+                animatedRotation.axis, animatedRotation.layer, animatedRotation.clockwise);
+            resetLayerCubeRotations();
+            animatedRotation = null;
         }
     }
 
@@ -251,15 +292,7 @@ public class CubeView {
         if (!isAnimationInProgress())
             throw new IllegalStateException("No animation in progress.");
 
-        float rotationLeft = rotationAngle * stepsLeft;
-        rotateLayer(rotationLeft);
-
-        stepsLeft = 0;
-        endRotation();
-    }
-
-    private void endRotation() {
-        viewCube.rotateLayer(animatedAxis, animatedLayer, rotationAngle > 0);
+        updateAnimation(animationStartTimeMs + animationDurationMs);
     }
 
     private void initializeBuffers() {
@@ -345,8 +378,8 @@ public class CubeView {
         return shader;
     }
 
-    public void draw(float[] mvp) {
-        draw(mvp, true);
+    public void draw(float[] mvp, double absoluteTimeMs) {
+        draw(mvp, absoluteTimeMs, true);
 
         glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
         glViewport(0, 0, textureWidth, textureHeight);
@@ -354,13 +387,13 @@ public class CubeView {
         glClearColor(1, 1, 1, EMPTY_SPACE_ALPHA);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        draw(mvp, false);
+        draw(mvp, absoluteTimeMs, false);
 
         glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    private void draw(float[] mvp, boolean renderToScreen) {
+    private void draw(float[] mvp, double absoluteTimeMs, boolean renderToScreen) {
         int program = renderToScreen ? screenProgram : touchProgram;
         glUseProgram(program);
 
@@ -380,6 +413,15 @@ public class CubeView {
         if (renderToScreen) {
             int colorMapUniform = glGetUniformLocation(program, "vsColorMap");
             glUniform3fv(colorMapUniform, 7, colorMap, 0);
+            int timeUniform = glGetUniformLocation(program, "fAbsTimeMs");
+            glUniform1f(timeUniform, (float)(absoluteTimeMs % 100000));
+
+            PartSideCoords selection = rubiksCube.getSelection();
+            int selectedPartIndexUniform = glGetUniformLocation(program, "iSelectedPartIndex");
+            glUniform1f(selectedPartIndexUniform,
+                selection == null ? -1 : selection.location.toIndex(viewCube.size));
+            int selectedSideUniform = glGetUniformLocation(program, "iSelectedSide");
+            glUniform1f(selectedSideUniform, selection == null ? -1 : selection.side.ordinal());
         }
         worldUniform = glGetUniformLocation(program, "mWorld");
         sidesUniform = glGetUniformLocation(program, "fsSides");
@@ -429,10 +471,10 @@ public class CubeView {
                 cubeSides[i] = part.get(CubeSide.fromOrdinal(i));
             }
             glUniform1fv(sidesUniform, cubeSides.length, cubeSides, 0);
-        } else {
-            glUniform1f(partIndexUniform, CubeCoords.toIndex(
-                    viewCube.size, left, top, depth));
         }
+
+        glUniform1f(partIndexUniform, CubeCoords.toIndex(
+                viewCube.size, left, top, depth));
 
         // Draw the triangles
         glDrawArrays(GL_TRIANGLES, 0, SIDE_VERTICES.length / 3);

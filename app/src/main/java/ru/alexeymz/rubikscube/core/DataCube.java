@@ -47,7 +47,7 @@ public final class DataCube<T> implements Rotatable {
     @Override
     public void rotateAround(Axis axis) {
         for (int i = 0; i < size; i++) {
-            rotateLayer(axis, i, true);
+            rotateLayer(axis, i, false);
         }
     }
 
@@ -55,7 +55,7 @@ public final class DataCube<T> implements Rotatable {
         if (layer < 0 || layer >= size)
             throw new IllegalArgumentException("layer must be in [0..size)");
 
-        int rotations = clockwise ? 1 : 3;
+        int rotations = clockwise ? 3 : 1;
         for (int i = 0; i < rotations; i++) {
             switch (axis) {
                 case LEFT:
@@ -71,6 +71,9 @@ public final class DataCube<T> implements Rotatable {
         }
     }
 
+    /**
+     * Counter-clockwise rotation of left layer
+     */
     private void rotateLeftLayer(int left) {
         final int max = size - 1;
         for (int i = 0; i < size / 2; i++) {
@@ -92,6 +95,9 @@ public final class DataCube<T> implements Rotatable {
         }
     }
 
+    /**
+     * Counter-clockwise rotation of top layer
+     */
     private void rotateTopLayer(int top) {
         final int max = size - 1;
         for (int i = 0; i < size / 2; i++) {
@@ -113,15 +119,18 @@ public final class DataCube<T> implements Rotatable {
         }
     }
 
+    /**
+     * Counter-clockwise rotation of depth layer
+     */
     private void rotateDepthLayer(int depth) {
         final int max = size - 1;
         for (int i = 0; i < size / 2; i++) {
             for (int j = i; j < max - i; j++) {
                 T temp = get(i, j, depth);
-                set(i, j, depth, get(max - j, i, depth));
-                set(max - j, i, depth, get(max - i, max - j, depth));
-                set(max - i, max - j, depth, get(j, max - i, depth));
-                set(j, max - i, depth, temp);
+                set(i, j, depth, get(j, max - i, depth));
+                set(j, max - i, depth, get(max - i, max - j, depth));
+                set(max - i, max - j, depth, get(max - j, i, depth));
+                set(max - j, i, depth, temp);
             }
         }
         for (int i = 0; i < size; i++) {

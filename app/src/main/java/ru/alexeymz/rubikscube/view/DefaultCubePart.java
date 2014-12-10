@@ -19,6 +19,6 @@ public class DefaultCubePart extends CubePart {
 
     @Override
     public void rotateAround(Axis axis) {
-        RotateUtils.rotate(this, axis, true);
+        RotateUtils.rotate(this, axis, false);
     }
 }
