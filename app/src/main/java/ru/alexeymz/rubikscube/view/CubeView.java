@@ -246,23 +246,26 @@ public class CubeView {
         }
     }
 
-    private void resetLayerCubeRotations() {
+    private void rotateLayerParts(float counterClockwiseAngle) {
         int animatedLayer = animatedRotation.layer;
+        float angle = counterClockwiseAngle;
         for (int i = 0; i < viewCube.size; i++) {
             for (int j = 0; j < viewCube.size; j++) {
-                CubePart part = null;
+                float[] world;
                 switch (animatedRotation.axis) {
                     case LEFT:
-                        part = viewCube.get(animatedLayer, i, j);
+                        world = viewCube.get(animatedLayer, i, j).world;
+                        rotateAround(world, world[X], world[Y], world[Z], -angle, 0, 0);
                         break;
                     case TOP:
-                        part = viewCube.get(i, animatedLayer, j);
+                        world = viewCube.get(i, animatedLayer, j).world;
+                        rotateAround(world, world[X], world[Y], world[Z], 0, angle, 0);
                         break;
                     case DEPTH:
-                        part = viewCube.get(i, j, animatedLayer);
+                        world = viewCube.get(i, j, animatedLayer).world;
+                        rotateAround(world, world[X], world[Y], world[Z], 0, 0, -angle);
                         break;
                 }
-                resetRotation(part.world);
             }
         }
     }
@@ -279,11 +282,14 @@ public class CubeView {
 
         animationOffsetTimeMs = absoluteTimeMs;
         if (absoluteTimeMs >= endTime) {
-            // finish rotation
-            //rotateLayer(-90 * invertMultiplier);
+            // finish rotation:
+            //   1. rotate back parts around itself to make LEFT/TOP/FRONT/etc sides
+            //      facing the right direction
+            //   2. swap parts in viewCube to make part's position consistent its cube coords
+            rotateLayerParts(-90 * invertMultiplier);
             viewCube.rotateLayer(
                 animatedRotation.axis, animatedRotation.layer, animatedRotation.clockwise);
-            resetLayerCubeRotations();
+
             animatedRotation = null;
         }
     }
@@ -292,6 +298,7 @@ public class CubeView {
         if (!isAnimationInProgress())
             throw new IllegalStateException("No animation in progress.");
 
+        // just update animation as if end time have been reached
         updateAnimation(animationStartTimeMs + animationDurationMs);
     }
 

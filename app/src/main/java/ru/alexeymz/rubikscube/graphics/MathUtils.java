@@ -54,7 +54,8 @@ public final class MathUtils {
     }
 
     /**
-     * Counter-clockwise rotation around point (x, y, z)
+     * Counter-clockwise rotation around point (x, y, z).
+     * Accepts rotation angles in degrees.
      */
     public static void rotateAround(float[] world,
                                     float x, float y, float z,
@@ -89,15 +90,6 @@ public final class MathUtils {
         world[RIGHT_X] *= rightR; world[RIGHT_Y] *= rightR; world[RIGHT_Z] *= rightR;
         world[LOOK_X]  *= lookR;  world[LOOK_Y]  *= lookR;  world[LOOK_Z]  *= lookR;
         setPosition(world, ox, oy, oz);
-    }
-
-    public static void resetRotation(float[] world) {
-        world[RIGHT_X] += world[RIGHT_Y] + world[RIGHT_Z];
-        world[UP_Y]    += world[UP_X]    + world[UP_Z];
-        world[LOOK_Z]  += world[LOOK_X]  + world[LOOK_Y];
-        world[RIGHT_Y] = world[RIGHT_Z] = 0;
-        world[UP_X]    = world[UP_Z]    = 0;
-        world[LOOK_X]  = world[LOOK_Y]  = 0;
     }
 
     public static float toRadians(float degrees) {

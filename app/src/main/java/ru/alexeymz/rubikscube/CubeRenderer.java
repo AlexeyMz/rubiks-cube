@@ -39,7 +39,7 @@ public class CubeRenderer implements GLSurfaceView.Renderer {
         Matrix.perspectiveM(projection, 0,
             45 /* (!) degrees */, aspectRatio, 1, 10);
         if (cube == null) {
-            cube = new RubiksCube(2, width, height);
+            cube = new RubiksCube(5, width, height);
         }
     }
 
