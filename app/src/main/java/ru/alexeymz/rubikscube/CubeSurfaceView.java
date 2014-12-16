@@ -8,40 +8,45 @@ import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
-import android.widget.Toast;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.beans.PropertyChangeSupport;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Objects;
+import java.util.Random;
 
-import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
+import ru.alexeymz.rubikscube.core.Axis;
 import ru.alexeymz.rubikscube.core.Rotation;
-import ru.alexeymz.rubikscube.elements.RubiksCube;
-import ru.alexeymz.rubikscube.graphics.MathUtils;
 import ru.alexeymz.rubikscube.view.PartSideCoords;
 
 public class CubeSurfaceView extends GLSurfaceView {
+    public static final String IN_UNDO_MODE_PROPERTY = "IN_UNDO_MODE";
 
     private static final float MAX_ROTATION_SPEED = 1000;
-    private static final float SELECTION_MOVE_THRESHOLD = 200;
     private static final double LAYER_ROTATION_DURATION_MS = 500;
+    private static final double UNDO_ROTATION_DURATION_MS = 200;
+
+    private PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
     private final CubeRenderer renderer;
 
+    private GestureDetector detector;
+
     private long startTime, time, previousTime;
 
-    private boolean isRotating = false;
     private boolean hasSelection = false;
-
-    private float originMoveX, originMoveY;
-    private float previousX, previousY;
-
+    private boolean inUndoMode = false;
     private float rotationX, rotationY;
 
     private final Deque<Rotation> rotations = new ArrayDeque<Rotation>();
+    private final Deque<Rotation> undoStack = new ArrayDeque<Rotation>();
+
+    private Random random = new Random();
 
     private final Runnable frameRendered = new Runnable() {
         @Override
@@ -54,18 +59,59 @@ public class CubeSurfaceView extends GLSurfaceView {
 
     public CubeSurfaceView(Context context) {
         super(context);
+        detector = new GestureDetector(context, createGestureListener());
         setEGLContextClientVersion(2);
         this.renderer = new CubeRenderer() {
             @Override
             public void onDrawFrame(GL10 unused) {
                 super.onDrawFrame(unused);
-                getHandler().post(frameRendered);
+                post(frameRendered);
             }
         };
         setRenderer(renderer);
         // Render the view only when there is a change in the drawing data
         setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
         startTime = SystemClock.uptimeMillis();
+        pcs.addPropertyChangeListener(new PropertyChangeListener() {
+            @Override
+            public void propertyChange(PropertyChangeEvent propertyChangeEvent) {
+                post(frameRendered);
+            }
+        });
+    }
+
+    public void addPropertyChangeListener(PropertyChangeListener listener) {
+        pcs.addPropertyChangeListener(listener);
+    }
+
+    public void removePropertyChangeListener(PropertyChangeListener listener) {
+        pcs.removePropertyChangeListener(listener);
+    }
+
+    public boolean isInUndoMode() {
+        return inUndoMode;
+    }
+
+    public void setInUndoMode(boolean value) {
+        boolean oldValue = inUndoMode;
+        inUndoMode = value;
+        pcs.firePropertyChange(IN_UNDO_MODE_PROPERTY, oldValue, inUndoMode);
+    }
+
+    public void randomize(int rotationCount) {
+        Axis lastAxis = null;
+        int lastLayer = -1;
+        while (rotationCount > 0) {
+            Axis axis = Axis.fromOrdinal(random.nextInt(Axis.ordinalCount()));
+            int layer = random.nextInt(renderer.cube.size());
+            if (axis == lastAxis && layer == lastLayer) { continue; }
+            boolean clockwise = random.nextBoolean();
+            rotations.addLast(new Rotation(axis, layer, clockwise));
+            lastAxis = axis;
+            lastLayer = layer;
+            rotationCount--;
+        }
+        post(frameRendered);
     }
 
     protected void update(long elapsed) {
@@ -84,9 +130,20 @@ public class CubeSurfaceView extends GLSurfaceView {
             renderer.cube.updateAnimation(renderer.absoluteTimeMs);
             return true;
         } else if (!rotations.isEmpty()) {
-            renderer.cube.beginLayerRotation(rotations.pop(),
+            Rotation rotation = rotations.pop();
+            undoStack.push(rotation.inverse());
+            renderer.cube.beginLayerRotation(rotation,
                 LAYER_ROTATION_DURATION_MS, renderer.absoluteTimeMs);
             return true;
+        } else if (inUndoMode) {
+            if (undoStack.isEmpty()) {
+                setInUndoMode(false);
+                return false;
+            } else {
+                renderer.cube.beginLayerRotation(undoStack.pop(),
+                    UNDO_ROTATION_DURATION_MS, renderer.absoluteTimeMs);
+                return true;
+            }
         } else {
             return false;
         }
@@ -105,7 +162,7 @@ public class CubeSurfaceView extends GLSurfaceView {
     }
 
     private boolean updateCubeRotation(double elapsedMs) {
-        float dt = (float)(elapsedMs / 100);
+        float dt = clamp((float)elapsedMs, 0, 48) / 100;
         synchronized (renderer.model) {
             Matrix.rotateM(renderer.model, 0, rotationX * dt, 0, 1, 0);
             Matrix.rotateM(renderer.model, 0, rotationY * dt,
@@ -116,74 +173,76 @@ public class CubeSurfaceView extends GLSurfaceView {
         return Math.abs(rotationX) + Math.abs(rotationY) > 1f;
     }
 
-    @Override
-    public boolean onTouchEvent(MotionEvent e) {
-        final float x = e.getX();
-        final float y = e.getY();
-        time = e.getEventTime();
-        final long elapsed = time - previousTime;
+    private GestureDetector.OnGestureListener createGestureListener() {
+        return new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDown(MotionEvent e) {
+                previousTime = time = e.getEventTime();
+                return true;
+            }
 
-        switch (e.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                isRotating = false;
-                originMoveX = x;
-                originMoveY = y;
-                break;
-            case MotionEvent.ACTION_MOVE:
-                float dx = x - previousX;
-                float dy = y - previousY;
+            @Override
+            public void onShowPress(MotionEvent e) {
+                super.onShowPress(e);
+            }
+
+            @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                time = e.getEventTime();
+                final long elapsed = time - previousTime;
+                final float x = e.getX();
+                final float y = e.getY();
+                queueEvent(new Runnable() {
+                    @Override
+                    public void run() {
+                        final PartSideCoords coords = renderer.cube.locationAtPixel((int) x, (int) y);
+                        final PartSideCoords currentSelection = renderer.cube.getSelection();
+                        post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (coords != null && currentSelection != null) {
+                                    Rotation rotation = renderer.cube.createRotationFromSides(
+                                            currentSelection.location, currentSelection.side,
+                                            coords.location, coords.side);
+                                    if (rotation != null) {
+                                        rotations.addLast(rotation);
+                                        renderer.cube.setSelection(null);
+                                    } else {
+                                        renderer.cube.setSelection(coords);
+                                    }
+                                } else {
+                                    renderer.cube.setSelection(coords);
+                                }
+                                hasSelection = renderer.cube.getSelection() != null;
+                                update(elapsed);
+                                requestRenderProvidedTime();
+                            }
+                        });
+                    }
+                });
+                previousTime = time;
+                return true;
+            }
+
+            @Override
+            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                time = e2.getEventTime();
+                final long elapsed = time - previousTime;
+                float dx = -distanceX, dy = -distanceY;
                 synchronized (renderer.model) {
                     if (renderer.model[UP_Y] < 0) { dx = -dx; }
                 }
                 rotationX = clamp(dx, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);
                 rotationY = clamp(dy, -MAX_ROTATION_SPEED, MAX_ROTATION_SPEED);
                 update(elapsed);
-                if (!isRotating && MathUtils.length(
-                        x - originMoveX, y - originMoveY) < SELECTION_MOVE_THRESHOLD) {
-                    isRotating = true;
-                }
-                break;
-            case MotionEvent.ACTION_UP:
-                if (!isRotating) {
-                    queueEvent(new Runnable() {
-                        @Override
-                        public void run() {
-                            final PartSideCoords coords = renderer.cube.locationAtPixel((int) x, (int) y);
-                            final PartSideCoords currentSelection = renderer.cube.getSelection();
-                            final String data = coords == null ? "nothing" : coords.toString();
-                            getHandler().post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    if (coords != null && currentSelection != null) {
-                                        Rotation rotation = renderer.cube.createRotationFromSides(
-                                                currentSelection.location, currentSelection.side,
-                                                coords.location, coords.side);
-                                        if (rotation != null) {
-                                            rotations.addLast(rotation);
-                                            renderer.cube.setSelection(null);
-                                        } else {
-                                            renderer.cube.setSelection(coords);
-                                        }
-                                    } else {
-                                        renderer.cube.setSelection(coords);
-                                    }
-                                    hasSelection = renderer.cube.getSelection() != null;
-                                    update(elapsed);
-                                    requestRenderProvidedTime();
-                                    setTitle(String.format("(%s, %s) -> ", x, y) + data);
-                                }
-                            });
-                        }
-                    });
-                }
-                break;
-        }
-
-        previousX = x;
-        previousY = y;
-        previousTime = time;
-        return true;
+                previousTime = time;
+                return true;
+            }
+        };
     }
 
-    protected void setTitle(String title) {}
+    @Override
+    public boolean onTouchEvent(MotionEvent e) {
+        return detector.onTouchEvent(e);
+    }
 }

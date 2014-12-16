@@ -5,6 +5,13 @@
         android:title="@string/action_settings"
         android:orderInCategory="100"
         android:showAsAction="never" />
+    <item android:id="@+id/action_randomize"
+        android:title="Randomize"
+        android:orderInCategory="40" />
+    <item android:id="@+id/action_toggle_undo"
+        android:title="Undo"
+        android:checkable="true"
+        android:orderInCategory="40" />
     <item android:id="@+id/action_reset_view"
         android:title="@string/action_reset_view"
         android:orderInCategory="50" />

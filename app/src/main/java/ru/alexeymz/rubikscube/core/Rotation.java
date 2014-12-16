@@ -12,4 +12,8 @@ public final class Rotation {
         this.layer = layer;
         this.clockwise = clockwise;
     }
+
+    public Rotation inverse() {
+        return new Rotation(axis, layer, !clockwise);
+    }
 }

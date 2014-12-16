@@ -51,6 +51,10 @@ public enum Axis {
 
     private static final Axis[] values = values();
 
+    public static int ordinalCount() {
+        return values.length;
+    }
+
     public static Axis fromOrdinal(int ordinal) {
         return values[ordinal];
     }
